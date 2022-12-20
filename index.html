@@ -1,0 +1,373 @@
+<!-- Simple Ray Tracing Engine Project -->
+<!-- Written By: Lorent Aliu -->
+<!-- Project for CIS4800 - Computer Graphics at the University of Guelph -->
+
+<!doctype html>
+
+<html lang="en">
+
+  <head>
+
+    <meta charset="utf-8">
+
+    <title>Raytracing Demo</title>
+
+  </head>
+
+  <body>
+
+<canvas class="myCanvas" width="1024" height="768"></canvas>
+<input type="file" onchange="readFile(this)">
+
+
+<script>
+    function render(scene){
+        console.log(scene);
+
+        const lights = scene.lights;
+        const spheres = scene.spheres;
+        const camera = {
+            point: {
+                x: 0,
+                y: 0,
+                z: 0,
+            },
+            direction:{
+                x: 0,
+                y: 0,
+                z: -1,
+            }
+        };
+
+        const canvas = document.querySelector('.myCanvas');
+
+        // set size of 2D image
+
+        const width = 1024;
+
+        const height = 768;
+
+        const ctx = canvas.getContext('2d');
+
+        // set background to black
+
+        ctx.fillStyle = 'rgb(0, 0, 0)';
+
+        ctx.fillRect(0, 0, width, height);
+
+        // pick a random colour for each pixel and draw it
+
+        for (let i=0; i<height-1; i++) {
+            for (let j=0; j<width-1; j++) {
+                //Calculate the vector from the eye point (0, 0, 0) to the specific pixel
+                let rayX = 2*(j/width) - 1;
+                let rayY = 1 - 2*(i/height);
+                let rayZ = -1.0;
+                let recursCount = 0;
+                let rayLen = Math.sqrt(rayX**2 + rayY**2 + rayZ**2);
+                rayX = rayX/rayLen;
+                rayY = rayY/rayLen;
+                rayZ = rayZ/rayLen;
+                let lightValues = rayTracing(rayX, rayY, rayZ, spheres, lights, camera, recursCount); 
+                if(lightValues!==undefined){  
+                    ctx.fillStyle = `rgb(
+                        ${lightValues[0]*255},
+
+                        ${lightValues[1]*255},
+
+                        ${lightValues[2]*255})`;
+                    ctx.fillRect(j, i, 1, 1);
+                }
+            }
+        }
+        console.log('Finished rendering')
+    }
+    function rayTracing(rayX, rayY, rayZ, spheres, lights, camera, count){
+        if(count>1){
+            return;
+        }
+        let riX, riY, riZ;
+        let sphereIndex;
+        let data = intersection(spheres, rayX, rayY, rayZ, camera);
+        if(data!==undefined){
+            riX = data[0];
+            riY = data[1];
+            riZ = data[2];
+            sphereIndex = data[3];
+        }
+        if(riX!==undefined){
+
+            //Calculating normals vector
+            let nX = (riX - spheres[sphereIndex].x) / spheres[sphereIndex].r;
+            let nY = (riY - spheres[sphereIndex].y) / spheres[sphereIndex].r;
+            let nZ = (riZ - spheres[sphereIndex].z) / spheres[sphereIndex].r;
+            let nLen = Math.sqrt(nX*nX + nY*nY + nZ*nZ);
+            nX = nX/nLen;
+            nY = nY/nLen;
+            nZ = nZ/nLen;
+            //Calculating viewing vector
+            let vX = camera.point.x - riX;
+            let vY = camera.point.y - riY;
+            let vZ = camera.point.z - riZ;
+            let vLen = Math.sqrt(vX*vX + vY*vY + vZ*vZ);
+            vX = vX/vLen;
+            vY = vY/vLen;
+            vZ = vZ/vLen;
+
+            //Calculating the light vector
+            let lX = lights[0].x - riX;
+            let lY = lights[0].y - riY;
+            let lZ = lights[0].z - riZ;
+            let lLen = Math.sqrt(lX**2 + lY**2 + lZ**2);
+            lX = lX/lLen;
+            lY = lY/lLen;
+            lZ = lZ/lLen;
+            
+            //Calculating the dot product of N and L
+            let dotNL = (nX * lX + nY * lY + nZ * lZ);
+            dotNL = Math.max(dotNL, 0.0);
+
+            //Calculating the reflection vector
+            let rX = (nX * dotNL * 2) - lX;
+            let rY = (nY * dotNL * 2) - lY;
+            let rZ = (nZ * dotNL * 2) - lZ;
+            let rLen = Math.sqrt(rX**2 + rY**2 + rZ**2);
+            rX = rX/rLen;
+            rY = rY/rLen;
+            rZ = rZ/rLen;
+
+            //Calculating dot product of R.V
+            let dotRV = (rX*vX + rY*vY + rZ*vZ);
+            dotRV = Math.max(dotRV, 0.0);
+
+            //Calculating the normal view for recursion ray
+            let dotNV = (nX * vX + nY * vY + nZ * vZ);
+            //dotNV = Math.max(dotNV, 0.0);
+
+            //Calculating the next ray vector for recursion
+            let rVX = (nX * dotNV * 2) - vX;
+            let rVY = (nY * dotNV * 2) - vY;
+            let rVZ = (nZ * dotNV * 2) - vZ;
+            let rVLen = Math.sqrt(rVX**2 + rVY**2 + rVZ**2);
+            rVX = rVX/rVLen;
+            rVY = rVY/rVLen;
+            rVZ = rVZ/rVLen;
+
+            let tempOrigin = {
+                point:{
+                    x: riX,
+                    y: riY,
+                    z: riZ,
+                }
+            }
+
+            //Calculating shadows
+            let data2;
+            data2 = intersection(spheres, lX, lX, lZ, tempOrigin);
+            //data2 = intersection(spheres, lights[0].x, lights[0].y, lights[0].z, tempOrigin);
+
+        
+            //Calculate next recursions lights using this vector
+            let recLights = rayTracing(rVX, rVY, rVZ, spheres, lights, tempOrigin, count + 1);
+
+            let ambientR = lights[0].lar * spheres[sphereIndex].ar;
+            let diffuseR = lights[0].lpr * spheres[sphereIndex].dr * dotNL;
+            let specularR = lights[0].lpr * spheres[sphereIndex].sr * (dotRV**5);
+
+            let ambientG = lights[0].lag * spheres[sphereIndex].ag;
+            let diffuseG = lights[0].lpg * spheres[sphereIndex].dg * dotNL;
+            let specularG = lights[0].lpg * spheres[sphereIndex].sg * (dotRV**5);
+
+            let ambientB = lights[0].lab * spheres[sphereIndex].ab;
+            let diffuseB = lights[0].lpb * spheres[sphereIndex].db * dotNL;
+            let specularB = lights[0].lpb * spheres[sphereIndex].sb * (dotRV**5);
+
+            let lightR, lightG, lightB;
+            let shadowLen, shadowLen2;
+            if(data2!==undefined){
+                shadowLen = Math.sqrt((riX - data2[0])**2 + (riY -data2[1])**2 + (riZ-data2[2])**2);
+                shadowLen2 = Math.sqrt((riX - lights[0].x)**2 + (riY-lights[0].y)**2 + (riZ-lights[0].z)**2);
+            }
+
+            if(data2===undefined){
+                lightR = (ambientR + diffuseR + specularR);
+                lightG = (ambientG + diffuseG + specularG);
+                lightB = (ambientB + diffuseB + specularB);
+            }
+            else if(data2[3] === sphereIndex || shadowLen>=shadowLen2){
+                lightR = (ambientR + diffuseR + specularR);
+                lightG = (ambientG + diffuseG + specularG);
+                lightB = (ambientB + diffuseB + specularB);
+            }
+            else{
+                lightR = ambientR;
+                lightG = ambientG;
+                lightB = ambientB;
+            }
+            
+
+            if(recLights!==undefined){
+                let fullR = (spheres[sphereIndex].shiny * recLights[0]) + ((1 -spheres[sphereIndex].shiny) * lightR);
+                let fullG = (spheres[sphereIndex].shiny * recLights[1]) + ((1 -spheres[sphereIndex].shiny) * lightG);
+                let fullB = (spheres[sphereIndex].shiny * recLights[2]) + ((1 -spheres[sphereIndex].shiny) * lightB);
+                return [fullR, fullG, fullB];
+            }
+            else{
+                return [lightR, lightG, lightB];
+            }
+        }
+    }
+    function intersection(spheres, rayX, rayY, rayZ, camera){
+        let riX, riY, riZ;
+        let sphereIndex;
+        for(let k = 0;k<spheres.length;k++){
+            //For each sphere calculate the A, B, C values first
+            let tempX, tempY, tempZ;
+            let A = 1.0;
+            let B = parseFloat(2.0 * (rayX * (camera.point.x - spheres[k].x) + rayY * (camera.point.y - spheres[k].y) + rayZ * (camera.point.z - spheres[k].z)));
+            let C = parseFloat((camera.point.x - spheres[k].x)**2 + (camera.point.y - spheres[k].y)**2 + (camera.point.z - spheres[k].z)**2 - spheres[k].r**2);
+            //Calculate the discriminant with these values
+            let dis = B*B - 4*A*C;
+            if(dis<0){
+                //Missed the sphere, no intersections
+                //return undefined;
+            }
+            else if(dis==0){
+                //Hits sphere at 1 point
+                let t0 = (-B - Math.sqrt(dis)) / (2 * A);
+                tempX = camera.point.x + rayX * t0;
+                tempY = camera.point.x + rayY * t0;
+                tempZ = camera.point.z + rayZ * t0;
+            }
+            else if(dis>0){
+                //Hits sphere at 2 points
+                let t0 = (-B - Math.sqrt(dis)) / (2 * A);
+                let t1 = (-B + Math.sqrt(dis)) / (2 * A);
+                let ri0X = camera.point.x + (rayX * t0);
+                let ri0Y = camera.point.y + (rayY * t0);
+                let ri0Z = camera.point.z + (rayZ * t0);
+                let ri1X = camera.point.x + (rayX * t1);
+                let ri1Y = camera.point.y + (rayY * t1);
+                let ri1Z = camera.point.z + (rayZ * t1);
+                let dist0 = Math.sqrt((ri0X - camera.point.x)*(ri0X - camera.point.x) + (ri0Y - camera.point.y)*(ri0Y - camera.point.y) + (ri0Z - camera.point.z)*(ri0Z - camera.point.z));
+                let dist1 = Math.sqrt((ri1X - camera.point.x)*(ri1X - camera.point.x) + (ri1Y - camera.point.y)*(ri1Y - camera.point.y) + (ri1Z - camera.point.z)*(ri1Z - camera.point.z));
+                if(t0 < t1){
+                    //ri0 is closer
+                    if(t0>0){
+                        tempX = ri0X;
+                        tempY = ri0Y;
+                        tempZ = ri0Z;
+                    }
+                }
+                else{
+                    if(t1>0){
+                        tempX = ri1X;
+                        tempY = ri1Y;
+                        tempZ = ri1Z;
+                    }
+                }
+            }
+            //Check which one is closest
+            if(riX!==undefined && tempX!==undefined){
+                let templen1 = Math.sqrt((camera.point.x - tempX)**2 + (camera.point.y - tempY)**2 + (camera.point.z - tempZ)**2);
+                let templen2 = Math.sqrt((camera.point.x - riX)**2 + (camera.point.y - riY)**2 + (camera.point.z - riZ)**2);
+                
+                if(templen1 < templen2){
+                    //console.log(`len1: ${templen1} len2: ${templen2}`);
+                    riX = tempX;
+                    riY = tempY;
+                    riZ = tempZ;
+                    sphereIndex = k;
+                }
+            }
+            else if(tempX!==undefined){
+                //console.log("hello im in here");
+                riX = tempX;
+                riY = tempY;
+                riZ = tempZ;
+                sphereIndex = k;
+            }
+        }
+        if(riX !==undefined){
+            return [riX, riY, riZ, sphereIndex];
+        }
+    }
+
+</script>
+
+<script>
+    function readFile(input) {
+      let file = input.files[0];
+    
+      let reader = new FileReader();
+      let scene = {};
+      scene.lights = [];
+      scene.spheres = [];
+
+      reader.readAsText(file);
+    
+      reader.onload = function() {
+        // split text file input into multiple lines (strings)
+        const lines = reader.result.split('\n');
+    
+        //loop through each line
+        for(let i = 0;i<lines.length;i++){
+            let arr = lines[i].split(' ');
+            let arr2 = [];
+            arr.forEach(item => {
+                if(item.length > 0){
+                    arr2.push(item);
+                }
+            });
+            //console.log(arr2);
+            //Case where its a light
+            if(arr2[0] == 'light'){
+                if(arr2.length == 10){
+                    scene.lights.push({
+                        x: parseFloat(arr2[1]),
+                        y: parseFloat(arr2[2]),
+                        z: parseFloat(arr2[3]),
+                        lar: parseFloat(arr2[4]),
+                        lag: parseFloat(arr2[5]),
+                        lab: parseFloat(arr2[6]),
+                        lpr: parseFloat(arr2[7]),
+                        lpg: parseFloat(arr2[8]),
+                        lpb: parseFloat(arr2[9])
+                    });
+                }
+            }
+            //Case where its a sphere
+            if(arr2[0] == 'sphere'){
+                if(arr2.length == 15){
+                    scene.spheres.push({
+                        x: parseFloat(arr2[1]),
+                        y: parseFloat(arr2[2]),
+                        z: parseFloat(arr2[3]),
+                        r: parseFloat(arr2[4]),
+                        ar: parseFloat(arr2[5]),
+                        ag: parseFloat(arr2[6]),
+                        ab: parseFloat(arr2[7]),
+                        dr: parseFloat(arr2[8]),
+                        dg: parseFloat(arr2[9]),
+                        db: parseFloat(arr2[10]),
+                        sr: parseFloat(arr2[11]),
+                        sg: parseFloat(arr2[12]),
+                        sb: parseFloat(arr2[13]),
+                        shiny: parseFloat(arr2[14]),
+                    });
+                }
+            }
+        }
+        render(scene);
+      };
+    
+      reader.onerror = function() {
+        console.log(reader.error);
+      };
+    
+    }
+    </script>
+
+  </body>
+
+</html>
